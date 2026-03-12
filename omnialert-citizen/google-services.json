@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "899011874088",
+    "project_id": "omnialert-sentinel",
+    "storage_bucket": "omnialert-sentinel.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:899011874088:android:832ae2c3dc5a7b35bf541d",
+        "android_client_info": {
+          "package_name": "Omni.Alert"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDnCBkvn_4fMM_auj80zZc8C_cLml8v-io"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
