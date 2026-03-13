@@ -206,8 +206,8 @@ The final implementation and integration were completed by the
 
 # Team
 
--   Asif\
--   Rahil\
+-   Asif
+-   Rahil
 -   Kutbuddin Shaikh
 
 ------------------------------------------------------------------------
