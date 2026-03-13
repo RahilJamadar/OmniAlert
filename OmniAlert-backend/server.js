@@ -31,10 +31,11 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/omnialert',
 // Mount Routes
 app.use('/api/ai', aiRoutes);
 app.use('/api/evacuate', evacuationRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/sos', sosRoutes);
+app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/sos', require('./routes/sosRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/safezones', require('./routes/safeZoneRoutes'));
+app.use('/api/auth', require('./routes/authRoutes'));
 
 // Root route
 app.get('/', (req, res) => res.send('OmniAlert API is Running'));
