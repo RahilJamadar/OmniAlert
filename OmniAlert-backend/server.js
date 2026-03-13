@@ -34,6 +34,7 @@ app.use('/api/evacuate', evacuationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/sos', sosRoutes);
 app.use('/api/users', require('./routes/userRoutes'));
+app.use('/api/safezones', require('./routes/safeZoneRoutes'));
 
 // Root route
 app.get('/', (req, res) => res.send('OmniAlert API is Running'));

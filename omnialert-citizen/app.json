@@ -18,6 +18,11 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyA9XpIQev4DZphm_HVXoP3Pg9zdi2ceFS4"
+        }
+      },
       "package": "Omni.Alert",
       "permissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
@@ -57,7 +62,9 @@
         {
           "icon": "./assets/images/icon.png",
           "color": "#ff0000",
-          "sounds": ["./assets/audio/siren.mp3"]
+          "sounds": [
+            "./assets/audio/siren.mp3"
+          ]
         }
       ]
     ],

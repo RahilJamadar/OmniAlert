@@ -11,7 +11,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const BACKGROUND_NOTIFICATION_TASK = 'BACKGROUND-NOTIFICATION-TASK';
-const API_BASE = 'http://192.168.0.120:5000'; // Make sure this matches your PC's IP
+const API_BASE = 'http://10.229.72.183:5000'; // Make sure this matches your PC's IP
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -50,8 +50,8 @@ TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error, execu
         // @ts-ignore
         if (Notifications.presentNotificationAsync) {
           await (Notifications as any).presentNotificationAsync({
-            title: "🚨 EMERGENCY ALERT 🚨",
-            body: "Immediate Action Required.",
+            title: notificationData.title || "🚨 EMERGENCY ALERT 🚨",
+            body: notificationData.message || "Immediate Action Required.",
             data: notificationData,
             fullScreenIntent: true
           });
@@ -59,8 +59,8 @@ TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error, execu
           // Fallback for newer expo-notifications
           await Notifications.scheduleNotificationAsync({
             content: {
-              title: "🚨 EMERGENCY ALERT 🚨",
-              body: "Immediate Action Required. Open App Now.",
+              title: notificationData.title || "🚨 EMERGENCY ALERT 🚨",
+              body: notificationData.message || "Immediate Action Required. Open App Now.",
               data: notificationData,
               sound: 'default'
             },
@@ -124,16 +124,9 @@ function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon
   return R * c;
 }
 
-const EMERGENCY_SHELTERS = [
-  { name: "City Hall Base", lat: 19.0760, lng: 72.8777 },
-  { name: "North Community Center", lat: 28.7041, lng: 77.1025 },
-  { name: "West Side School", lat: 18.5204, lng: 73.8567 },
-  { name: "Safe Zone Alpha", lat: 12.9716, lng: 77.5946 }, // BLR
-  { name: "Govt Hospital Safehouse", lat: 13.0827, lng: 80.2707 } // Chennai
-];
-
 export default function HomeScreen() {
-  const [sosActive, setSosActive] = useState(false);
+  const [isSosBroadcasting, setIsSosBroadcasting] = useState(false);
+  const [isReceivingAlert, setIsReceivingAlert] = useState(false);
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [nearestShelter, setNearestShelter] = useState<any>(null);
   const [emergencyMessage, setEmergencyMessage] = useState("EMERGENCY SIGNAL BROADCASTING");
@@ -150,19 +143,21 @@ export default function HomeScreen() {
   const pulseOpacity = useSharedValue(0.5);
   const redFlashOpacity = useSharedValue(0);
 
-  const startPulse = () => {
+  const startPulse = (isEmergency: boolean = false) => {
     pulseScale.value = withRepeat(withTiming(1.6, { duration: 1000, easing: Easing.out(Easing.ease) }), -1, true);
     pulseOpacity.value = withRepeat(withTiming(0, { duration: 1000, easing: Easing.out(Easing.ease) }), -1, true);
 
-    // Aggressive red screen strobe
-    redFlashOpacity.value = withRepeat(
-      withSequence(
-        withTiming(0.8, { duration: 400 }),
-        withTiming(0.2, { duration: 400 })
-      ),
-      -1,
-      true
-    );
+    // Aggressive red screen strobe only for incoming emergencies
+    if (isEmergency) {
+      redFlashOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.8, { duration: 400 }),
+          withTiming(0.2, { duration: 400 })
+        ),
+        -1,
+        true
+      );
+    }
   };
 
   const stopPulseAnimation = () => {
@@ -267,19 +262,28 @@ export default function HomeScreen() {
         console.warn("Location fetch error:", e);
       }
 
-      // Calculate nearest shelter
+      // Calculate nearest shelter from backend API
       if (loc) {
-        let minDistance = Infinity;
-        let nearest = null;
-        for (const shelter of EMERGENCY_SHELTERS) {
-          const d = getDistanceFromLatLonInKm(loc.coords.latitude, loc.coords.longitude, shelter.lat, shelter.lng);
-          if (d < minDistance) {
-            minDistance = d;
-            nearest = { ...shelter, distance: d };
+        try {
+          const szRes = await axios.get(`${API_BASE}/api/safezones`);
+          if (szRes.data.success && szRes.data.data.length > 0) {
+            let minDistance = Infinity;
+            let nearest = null;
+            for (const shelter of szRes.data.data) {
+              const shelLng = shelter.location.coordinates[0];
+              const shelLat = shelter.location.coordinates[1];
+              const d = getDistanceFromLatLonInKm(loc.coords.latitude, loc.coords.longitude, shelLat, shelLng);
+              if (d < minDistance) {
+                minDistance = d;
+                nearest = { name: shelter.name, distance: d, status: shelter.status };
+              }
+            }
+            if (nearest) {
+              setNearestShelter(nearest);
+            }
           }
-        }
-        if (nearest) {
-          setNearestShelter(nearest);
+        } catch (err) {
+          console.warn("Failed to fetch nearest safe zones:", err);
         }
       }
 
@@ -333,32 +337,34 @@ export default function HomeScreen() {
   }, [player]);
 
   const activateEmergencySequence = () => {
-    setSosActive(true);
+    setIsReceivingAlert(true);
     if (player) player.play();
-    startPulse();
+    startPulse(true);
   };
 
   const playSiren = () => {
     if (player) player.play();
   };
 
-  const stopSiren = () => {
+  const stopEmergencyAlert = () => {
     if (player) {
       player.pause();
       player.seekTo(0);
-      setSosActive(false);
-      stopPulseAnimation();
     }
+    setIsReceivingAlert(false);
+    stopPulseAnimation();
+    setEmergencyMessage("EMERGENCY ALERT DISMISSED");
   };
 
   const triggerSOS = async () => {
-    if (sosActive) {
-      stopSiren();
+    if (isSosBroadcasting) {
+      setIsSosBroadcasting(false);
+      stopPulseAnimation();
       return;
     }
 
-    setEmergencyMessage("BROADCASTING SOS SIGNAL...");
-    activateEmergencySequence();
+    setIsSosBroadcasting(true);
+    startPulse(false); // pulse UI but no red strobe
 
     try {
       const payload = {
@@ -371,6 +377,8 @@ export default function HomeScreen() {
       await axios.post(`${API_BASE}/api/sos`, payload);
     } catch (error) {
       console.warn('Failed to send SOS to backend');
+      setIsSosBroadcasting(false);
+      stopPulseAnimation();
     }
   };
 
@@ -381,7 +389,7 @@ export default function HomeScreen() {
       <Animated.View style={[styles.redFlashOverlay, animatedRedFlashStyle]} pointerEvents="none" />
 
       {/* EMERGENCY MODAL FOR FULL SCREEN TAKEOVER */}
-      <Modal visible={sosActive} transparent={true} animationType="fade">
+      <Modal visible={isReceivingAlert} transparent={true} animationType="fade">
         <Animated.View style={[styles.modalBackground, animatedRedFlashStyle]} />
         <View style={styles.modalContent}>
           <Text style={styles.emergencyHeadline}>🚨 CATASTROPHIC ALERT 🚨</Text>
@@ -396,7 +404,7 @@ export default function HomeScreen() {
             </View>
           )}
 
-          <TouchableOpacity style={styles.stopEmergencyButton} onPress={stopSiren}>
+          <TouchableOpacity style={styles.stopEmergencyButton} onPress={stopEmergencyAlert}>
             <Text style={styles.stopEmergencyText}>I AM SAFE (DISMISS ALARM)</Text>
           </TouchableOpacity>
         </View>
@@ -416,19 +424,19 @@ export default function HomeScreen() {
         <Animated.View style={[styles.pulseRing, animatedPulseStyle]} />
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.sosButton, sosActive ? styles.sosButtonActive : null]}
+          style={[styles.sosButton, isSosBroadcasting ? styles.sosButtonActive : null]}
           onPress={triggerSOS}
         >
           <LinearGradient
-            colors={sosActive ? ['#ef4444', '#991b1b'] : ['#dc2626', '#7f1d1d']}
+            colors={isSosBroadcasting ? ['#ef4444', '#991b1b'] : ['#dc2626', '#7f1d1d']}
             style={styles.sosGradient}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
           >
-            <Text style={styles.sosText}>{sosActive ? 'STOP' : 'S O S'}</Text>
+            <Text style={styles.sosText}>{isSosBroadcasting ? 'STOP' : 'S O S'}</Text>
           </LinearGradient>
         </TouchableOpacity>
         <Text style={styles.sosHelperText}>
-          {sosActive ? 'Broadcasting Emergency Signal...' : 'Tap for Emergency Broadcast'}
+          {isSosBroadcasting ? 'Broadcasting Emergency Signal...' : 'Tap for Emergency Broadcast'}
         </Text>
       </Animated.View>
 
@@ -451,7 +459,7 @@ export default function HomeScreen() {
           <LinearGradient colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']} style={styles.glassCard}>
             <Text style={styles.cardLabel}>NEAREST SHELTER</Text>
             <Text style={styles.cardValue}>{nearestShelter ? nearestShelter.name : "Locating..."}</Text>
-            <Text style={styles.cardSubtext}>{nearestShelter ? `${nearestShelter.distance.toFixed(2)} km away • Open` : "Calculating..."}</Text>
+            <Text style={styles.cardSubtext}>{nearestShelter ? `${nearestShelter.distance.toFixed(2)} km away • ${nearestShelter.status}` : "Calculating..."}</Text>
           </LinearGradient>
         </Animated.View>
       </View>

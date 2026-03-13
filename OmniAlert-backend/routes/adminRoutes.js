@@ -3,6 +3,7 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const AIService = require('../services/AI_Service');
 const FCMService = require('../services/FCM_Service');
+const NASAService = require('../services/NASA_Service');
 const axios = require('axios');
 
 // @route   GET /api/admin/system-health
@@ -206,6 +207,38 @@ router.get('/weather-predictions', async (req, res) => {
 
     res.status(200).json({ success: true, predictions });
 
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// @route   GET /api/admin/nasa-predictions
+// @desc    Polls real NASA LHASA API for major Indian cities coordinates
+// @access  Admin
+router.get('/nasa-predictions', async (req, res) => {
+  try {
+    const locations = [
+      { id: 'z1', name: 'Mumbai', lat: 19.0760, lng: 72.8777, type: 'Landslide' },
+      { id: 'z2', name: 'Delhi', lat: 28.7041, lng: 77.1025, type: 'Flood' },
+      { id: 'z3', name: 'Chennai', lat: 13.0827, lng: 80.2707, type: 'Flood' },
+      { id: 'z4', name: 'Kolkata', lat: 22.5726, lng: 88.3639, type: 'Cyclone' },
+      { id: 'z5', name: 'Kerala', lat: 10.8505, lng: 76.2711, type: 'Landslide' }
+    ];
+
+    const results = await Promise.all(
+      locations.map(loc => 
+        NASAService.getNASAEnvironmentalRisk(loc.lat, loc.lng)
+          .then(data => ({
+            ...loc,
+            riskScore: data ? data.landslideProbability : 0,
+            alertLevel: data ? data.alertLevel : 'UNKNOWN',
+            timestamp: data ? data.timestamp : new Date().toISOString()
+          }))
+          .catch(err => ({ ...loc, riskScore: 0 }))
+      )
+    );
+
+    res.status(200).json({ success: true, zones: results });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

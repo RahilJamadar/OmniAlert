@@ -1,4 +1,4 @@
-const admin = require('firebase-admin');
+  const admin = require('firebase-admin');
 const User = require('../models/User');
 const SafeZone = require('../models/SafeZone');
 
@@ -83,30 +83,26 @@ class FCMService {
         };
 
         const message = {
-          notification: {
-            title: `URGENT: ${threatData.threat_type} WARNING 🚨`,
-            body: `${threatData.suggested_action}. Proceed to nearest safe zone immediately.`
-          },
           data: {
+            title: `URGENT: ${threatData.threat_type} WARNING 🚨`,
+            message: `${threatData.suggested_action}. Proceed to nearest safe zone immediately.`,
             risk_level: threatData.risk_level,
             threat_type: threatData.threat_type,
             ...safeZonePayload,
             type: "EVACUATION_OVERLAY"
           },
           android: {
-            priority: 'high',
-            notification: {
-              channelId: 'emergency-siren',
-              priority: 'max',
-              defaultSound: false,
-              defaultVibrateTimings: true
-            }
+            priority: 'high'
           },
           apns: {
             payload: {
               aps: {
+                alert: {
+                  title: `URGENT: ${threatData.threat_type} WARNING 🚨`,
+                  body: `${threatData.suggested_action}. Proceed to nearest safe zone immediately.`
+                },
                 sound: 'default',
-                contentAvailable: true,
+                'content-available': 1,
               }
             },
             headers: {
@@ -125,6 +121,35 @@ class FCMService {
         if (admin.apps.length > 0) {
            const responses = await admin.messaging().sendEach(messages);
            console.log(`[FCM] Sent ${responses.successCount} push notifications successfully. Failed: ${responses.failureCount}`);
+           
+           if (responses.failureCount > 0) {
+             const failedTokens = [];
+             responses.responses.forEach((resp, idx) => {
+               if (!resp.success) {
+                 const errorCode = resp.error?.code;
+                 const errorMessage = resp.error?.message;
+                 console.error(`[FCM] Token failure for token ${messages[idx].token}: ErrorCode: ${errorCode}, ErrorMessage: ${errorMessage}`);
+                 
+                 // Token Cleanup Logic
+                 if (
+                   errorCode === 'messaging/registration-token-not-registered' ||
+                   errorCode === 'messaging/invalid-registration-token' ||
+                   errorCode === 'messaging/not-found'
+                 ) {
+                   failedTokens.push(messages[idx].token);
+                 }
+               }
+             });
+             
+             if (failedTokens.length > 0) {
+               console.log(`[FCM] Cleaning up ${failedTokens.length} invalid/unregistered tokens.`);
+               await User.updateMany(
+                 { fcmToken: { $in: failedTokens } },
+                 { $unset: { fcmToken: "" } }
+               );
+               console.log(`[FCM] Successfully removed ${failedTokens.length} inactive tokens.`);
+             }
+           }
         } else {
            console.log(`[FCM Mock] (No credentials) Would have sent ${messages.length} High-Priority pushes.`);
         }

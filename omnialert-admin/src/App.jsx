@@ -3,6 +3,10 @@ import Dashboard from './Dashboard';
 import SOSDashboard from './SOSDashboard';
 import Calamities from './Calamities';
 import Predictions from './Predictions';
+import NASAMonitor from './NASAMonitor';
+import SafeZonesDashboard from './SafeZonesDashboard';
+import { Toaster } from 'react-hot-toast';
+import useGlobalSOS from './hooks/useGlobalSOS';
 import './App.css';
 
 function NavLinks() {
@@ -12,17 +16,22 @@ function NavLinks() {
   return (
     <>
       <Link to="/" className={isActive('/')}>Map Dashboard</Link>
+      <Link to="/nasa-monitor" className={isActive('/nasa-monitor')}>NASA Monitor</Link>
       <Link to="/sos" className={isActive('/sos')}>SOS Signals</Link>
       <Link to="/calamities" className={isActive('/calamities')}>Manual Alerts</Link>
       <Link to="/predictions" className={isActive('/predictions')}>Weather Predictions</Link>
+      <Link to="/safe-zones" className={isActive('/safe-zones')}>Safe Zones</Link>
     </>
   );
 }
 
 function App() {
+  const { sosLogs, loading } = useGlobalSOS();
+
   return (
     <Router>
       <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-red-500/30">
+        <Toaster position="top-right" reverseOrder={false} />
         <nav className="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 z-50 shadow-lg shadow-black/20">
           <div className="max-w-7xl mx-auto flex gap-6 items-center">
             <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-orange-500 mr-4 tracking-tight">OmniAlert Admin</h1>
@@ -30,10 +39,12 @@ function App() {
           </div>
         </nav>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/sos" element={<SOSDashboard />} />
-          <Route path="/calamities" element={<Calamities />} />
-          <Route path="/predictions" element={<Predictions />} />
+           <Route path="/" element={<Dashboard />} />
+           <Route path="/nasa-monitor" element={<NASAMonitor />} />
+           <Route path="/sos" element={<SOSDashboard sosLogs={sosLogs} loading={loading} />} />
+           <Route path="/calamities" element={<Calamities />} />
+           <Route path="/predictions" element={<Predictions />} />
+           <Route path="/safe-zones" element={<SafeZonesDashboard />} />
         </Routes>
       </div>
     </Router>

@@ -5,13 +5,35 @@ class AIService {
     this.apiKey = process.env.OPENROUTER_API_KEY;
     this.openWeatherApiKey = process.env.OPENWEATHER_API_KEY;
     this.baseURL = "https://openrouter.ai/api/v1/chat/completions";
-    // Using mistral-small-3.1-24b-instruct:free
-    this.model = "openai/gpt-oss-20b:free";
+    this.model = "liquid/lfm-2.5-1.2b-instruct:free";
+  }
+
+  /**
+   * FINAL ROBUST JSON CLEANER
+   * Specifically strips backticks and "json" markers, then extracts 
+   * only the content between the first and last curly braces.
+   */
+  _cleanJSONResponse(content) {
+    if (!content) return "{}";
+    
+    try {
+      // Find the first occurrence of '{' and the last occurrence of '}'
+      const firstBracket = content.indexOf('{');
+      const lastBracket = content.lastIndexOf('}');
+      
+      if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+        return content.substring(firstBracket, lastBracket + 1);
+      }
+      
+      return content.trim();
+    } catch (e) {
+      console.error("Error cleaning JSON:", e);
+      return "{}";
+    }
   }
 
   /**
    * Private helper to handle AI requests with Exponential Backoff
-   * Helps mitigate 429 "Too Many Requests" errors
    */
   async _requestAI(payload, retries = 3, delay = 2000) {
     try {
@@ -24,16 +46,23 @@ class AIService {
         }
       });
 
-      const responseContent = response.data.choices[0]?.message?.content;
+      let responseContent = response.data.choices[0]?.message?.content;
       if (!responseContent) throw new Error("Empty response from AI");
       
-      return JSON.parse(responseContent);
+      // Extract ONLY the JSON part from the response string
+      const sanitizedContent = this._cleanJSONResponse(responseContent);
+      
+      try {
+        return JSON.parse(sanitizedContent);
+      } catch (parseError) {
+        console.error("Critical: Failed to parse sanitized content:", sanitizedContent);
+        throw new Error("AI output format is invalid for JSON parsing.");
+      }
     } catch (error) {
-      // If we hit a rate limit (429) and have retries left
       if (error.response?.status === 429 && retries > 0) {
         console.warn(`Rate limited (429). Retrying in ${delay}ms... (${retries} retries left)`);
         await new Promise(resolve => setTimeout(resolve, delay));
-        return this._requestAI(payload, retries - 1, delay * 2); // Double the delay for next attempt
+        return this._requestAI(payload, retries - 1, delay * 2);
       }
 
       console.error("AI Request Error:", error.response?.data || error.message);
@@ -43,7 +72,6 @@ class AIService {
 
   async analyzeRisk(sensorDataArray) {
     if (!this.apiKey) {
-      console.warn("WARN: OPENROUTER_API_KEY is missing. Returning mock data.");
       return { 
         risk_level: "RED", 
         threat_type: "LANDSLIDE", 
@@ -58,11 +86,11 @@ class AIService {
       messages: [
         {
           role: "system",
-          content: `You are an advanced early warning risk assessment AI. Analyze the provided live sensor data (rainfall, soil moisture, river levels) and output a JSON risk assessment. The output MUST exactly match this JSON structure: { "risk_level": "RED|ORANGE|YELLOW", "threat_type": "string", "suggested_action": "string", "confidence": number }`
+          content: "You are an early warning AI. Analyze sensor data. Output ONLY a raw JSON object. Do not use markdown backticks. Structure: { \"risk_level\": \"RED|ORANGE|YELLOW\", \"threat_type\": \"string\", \"suggested_action\": \"string\", \"confidence\": number }"
         },
         {
           role: "user",
-          content: `Live Sensor Data: ${JSON.stringify(sensorDataArray)}`
+          content: `Data: ${JSON.stringify(sensorDataArray)}`
         }
       ]
     };
@@ -70,44 +98,42 @@ class AIService {
     try {
       return await this._requestAI(payload);
     } catch (error) {
-      throw new Error("Failed to assess risk via OpenRouter after retries.");
+      console.error("AI Analysis Failed. Returning safe fallback data.", error.message);
+      return { 
+        risk_level: "YELLOW", 
+        threat_type: "SYSTEM_FALLBACK", 
+        suggested_action: "Monitor local authorities. AI analysis degraded.", 
+        confidence: 50 
+      };
     }
   }
 
   async fetchWeatherPredictiveRisk(lat, lng) {
-    if (!this.openWeatherApiKey) {
-      console.warn("WARN: OPENWEATHER_API_KEY is missing. Generating mock.");
-      return this._mockPredictiveWeather(lat, lng);
-    }
+    if (!this.openWeatherApiKey) return this._mockPredictiveWeather(lat, lng);
 
     try {
-      // 1. Fetch live weather from OpenWeather
       const weatherRes = await axios.get(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${this.openWeatherApiKey}&units=metric`);
       const weatherData = weatherRes.data;
 
       if (!this.apiKey) return this._mockPredictiveWeather(lat, lng);
 
-      // 2. Prepare AI Payload
       const predictPayload = {
         model: this.model,
         response_format: { type: "json_object" },
         messages: [
           {
             role: "system",
-            content: `You are an AI meteriological analyst focusing on Cyclones, Heavy Monsoons, and Drought scenarios. Analyze the weather conditions and return JSON: { "severity_score": number (1-100), "threat_category": "CYCLONE|MONSOON|DROUGHT|NORMAL", "alert_level": "RED|ORANGE|YELLOW|GREEN", "predictive_analysis": "string" }`
+            content: "Meteorological Engine: Analyze weather for CYCLONE, MONSOON, or DROUGHT. Output ONLY a raw JSON object without markdown formatting. Schema: { \"severity_score\": number, \"threat_category\": \"CYCLONE|MONSOON|DROUGHT|NORMAL\", \"alert_level\": \"RED|ORANGE|YELLOW|GREEN\", \"predictive_analysis\": \"string\" }"
           },
           {
             role: "user",
-            content: `Live Weather Data (Lat: ${lat}, Lng: ${lng}): ${JSON.stringify(weatherData)}`
+            content: `Weather at (${lat}, ${lng}): ${JSON.stringify(weatherData)}`
           }
         ]
       };
 
-      // 3. Request analysis with retry logic
       return await this._requestAI(predictPayload);
     } catch (error) {
-      console.error("Predictive Risk fetch error:", error.message);
-      // Fallback to mock so the app doesn't crash during demo/dev
       return this._mockPredictiveWeather(lat, lng);
     }
   }
@@ -117,7 +143,7 @@ class AIService {
       severity_score: 88,
       threat_category: "CYCLONE",
       alert_level: "RED",
-      predictive_analysis: "MOCK DATA: High likelihood of severe weather based on simulated pressure drops."
+      predictive_analysis: "MOCK DATA: High likelihood of severe weather."
     };
   }
 }

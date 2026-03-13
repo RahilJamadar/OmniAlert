@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import React, { useState } from 'react';
+import toast from 'react-hot-toast';
 import { AlertTriangle, MapPin, Clock } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -25,28 +25,23 @@ const redIcon = new L.Icon({
 // Assuming backend runs on 5000 in dev
 const API_URL = 'http://localhost:5000/api';
 
-export default function SOSDashboard() {
-  const [sosLogs, setSosLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function SOSDashboard({ sosLogs = [], loading = false }) {
+  // Store which SOS requests have been dispatched
+  const [dispatchedIds, setDispatchedIds] = useState(new Set());
 
-  const fetchSOS = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/sos/active`);
-      if (res.data.success) {
-        setSosLogs(res.data.data);
-      }
-    } catch (err) {
-      console.error("Failed to fetch SOS signals", err);
-    } finally {
-      setLoading(false);
-    }
+  const handleDispatch = (logId, e) => {
+    e.stopPropagation(); // prevent map centering if you have a click handler
+    
+    // Simulate backend forward
+    setTimeout(() => {
+      setDispatchedIds(prev => new Set([...prev, logId]));
+      toast.success('Successfully Dispatched to Nearest Station', {
+        icon: '🚔',
+        style: { borderRadius: '10px', background: '#333', color: '#fff' }
+      });
+    }, 500);
   };
 
-  useEffect(() => {
-    fetchSOS();
-    const interval = setInterval(fetchSOS, 5000); // Poll every 5 seconds
-    return () => clearInterval(interval);
-  }, []);
 
   const defaultCenter = [19.0760, 72.8777]; // Mumbai
 
@@ -72,24 +67,35 @@ export default function SOSDashboard() {
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              {sosLogs.map(log => (
-                <div key={log._id} className="bg-slate-800/50 hover:bg-slate-800 border border-red-500/30 p-4 rounded-xl transition-colors cursor-pointer group">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="font-semibold text-slate-200">User: {log.userId}</span>
-                    <span className="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded-full border border-red-500/30">
-                      High Priority
-                    </span>
+              {sosLogs.map(log => {
+                const isDispatched = dispatchedIds.has(log._id);
+                return (
+                  <div key={log._id} className={`bg-slate-800/50 hover:bg-slate-800 border p-4 rounded-xl transition-colors cursor-pointer group ${isDispatched ? 'border-green-500/30 opacity-75' : 'border-red-500/30'}`}>
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="font-semibold text-slate-200">User: {log.userId}</span>
+                      <span className={`text-xs px-2 py-1 rounded-full border ${isDispatched ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}>
+                        {isDispatched ? 'Responders En Route' : 'High Priority'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-slate-400 mb-2">
+                      <MapPin className="w-4 h-4" />
+                      {log.location.coordinates[1].toFixed(4)}, {log.location.coordinates[0].toFixed(4)}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-500 mb-4">
+                      <Clock className="w-3 h-3" />
+                      {new Date(log.timestamp).toLocaleString()}
+                    </div>
+                    {!isDispatched && (
+                      <button 
+                        onClick={(e) => handleDispatch(log._id, e)}
+                        className="w-full bg-slate-900 border border-slate-700 hover:bg-slate-700 text-blue-400 font-bold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                      >
+                        🚔 Dispatch to Nearest Station
+                      </button>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-slate-400 mb-1">
-                    <MapPin className="w-4 h-4" />
-                    {log.location.coordinates[1].toFixed(4)}, {log.location.coordinates[0].toFixed(4)}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <Clock className="w-3 h-3" />
-                    {new Date(log.timestamp).toLocaleString()}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

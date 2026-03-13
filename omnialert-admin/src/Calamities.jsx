@@ -2,74 +2,75 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { CloudRain, Droplets, MountainSnow, Wind, ExternalLink } from 'lucide-react';
 
+import useNASAData from './hooks/useNASAData';
+import useGeocoding from './hooks/useGeocoding';
+
 const API_URL = 'http://localhost:5000/api';
+
+function CalamityCard({ c, handleBroadcast, loading }) {
+  const { address, loading: geoLoading } = useGeocoding(c.lat, c.lng);
+
+  // Determine icon based on type loosely
+  let Icon = ShieldAlert;
+  let color = 'red';
+  const t = (c.type || '').toUpperCase();
+  if (t.includes('CYCLONE') || t.includes('WIND')) { Icon = Wind; color = 'blue'; }
+  else if (t.includes('FLOOD') || t.includes('STORM') || t.includes('RAIN')) { Icon = CloudRain; color = 'cyan'; }
+  else if (t.includes('DROUGHT') || t.includes('FIRE')) { Icon = Droplets; color = 'orange'; }
+  else if (t.includes('LANDSLIDE') || t.includes('EARTHQUAKE')) { Icon = MountainSnow; color = 'amber'; }
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col justify-between">
+      <div>
+        <div className="flex justify-between items-start mb-4">
+          <div className={`p-3 rounded-xl bg-${color}-500/10`}>
+            <Icon className={`w-8 h-8 text-${color}-400`} />
+          </div>
+          <span className="bg-red-500/20 text-red-400 px-3 py-1 rounded-full text-xs border border-red-500/30 font-semibold tracking-wide">
+            {c.alertLevel || "HIGH RISK"}
+          </span>
+        </div>
+        <h3 className="text-xl font-bold text-slate-200 mb-2">{c.name || 'Unknown Alert'}</h3>
+        <p className="text-slate-400 text-sm mb-4 leading-relaxed">
+           NASA Risk Score: {c.riskScore}%. {c.type} threat detected.
+        </p>
+        
+        <div className="bg-slate-950 rounded-lg p-3 text-sm text-slate-500 mb-6 font-mono">
+          <p className="text-indigo-400 font-bold mb-1">{geoLoading ? 'Resolving Address...' : address}</p>
+          <p>Lat: {c.lat?.toFixed(4)} | Lng: {c.lng?.toFixed(4)}</p>
+          <p>Impact Radius: 20 km (Default)</p>
+        </div>
+      </div>
+      
+      <button 
+        onClick={() => handleBroadcast(c)}
+        disabled={loading}
+        className={`w-full bg-red-600 hover:bg-red-500 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+      >
+        <ExternalLink className="w-5 h-5" />
+        Broadcast Emergency Overlay
+      </button>
+    </div>
+  );
+}
 
 export default function Calamities() {
   const [broadcastLog, setBroadcastLog] = useState([]);
   const [loading, setLoading] = useState(false);
-
-  // Hardcoded epicenters for demonstration
-  const calamities = [
-    {
-      id: 'cyclone',
-      type: 'CYCLONE',
-      title: 'Cyclone Approaching',
-      description: 'Severe cyclonic storm projected to hit coastal areas within 48 hours.',
-      icon: <Wind className="w-8 h-8 text-blue-400" />,
-      color: 'blue',
-      lat: 18.9220,
-      lng: 72.8347,
-      radius: 50,
-      message: 'Cyclone warning: Seek sturdy shelter immediately. Stay away from coasts.'
-    },
-    {
-      id: 'flood',
-      type: 'FLOOD',
-      title: 'Flash Floods',
-      description: 'Heavy rainfall causing rapid water rise in low-lying urban areas.',
-      icon: <CloudRain className="w-8 h-8 text-cyan-400" />,
-      color: 'cyan',
-      lat: 19.0760,
-      lng: 72.8777,
-      radius: 20,
-      message: 'Flash flood warning: Move to local safe zones or higher ground. Avoid driving.'
-    },
-    {
-      id: 'drought',
-      type: 'DROUGHT',
-      title: 'Severe Drought',
-      description: 'Prolonged dry spell causing critical municipal water shortage.',
-      icon: <Droplets className="w-8 h-8 text-orange-400" />,
-      color: 'orange',
-      lat: 19.2183,
-      lng: 72.9781,
-      radius: 100,
-      message: 'Severe water scarcity: Strict water rationing in effect. Conserve immediately.'
-    },
-    {
-      id: 'landslide',
-      type: 'LANDSLIDE',
-      title: 'Landslide Risk',
-      description: 'Unstable terrain detected in hilly regions following heavy monsoon rains.',
-      icon: <MountainSnow className="w-8 h-8 text-amber-500" />,
-      color: 'amber',
-      lat: 19.1726,
-      lng: 72.9425, // Powai/Hilly area roughly
-      radius: 15,
-      message: 'Critical Landslide Risk: Evacuate hillside areas immediately. Soil instability detected.'
-    }
-  ];
+  
+  // Use real data from NASA EONET
+  const { highRiskZones } = useNASAData();
 
   const handleBroadcast = async (calamity) => {
-    if (!window.confirm(`Broadcast ${calamity.type} RED ALERT to ${calamity.radius}km area?`)) return;
+    if (!window.confirm(`Broadcast ${calamity.type} RED ALERT to the surrounding area?`)) return;
     
     setLoading(true);
     try {
       const payload = {
         lat: calamity.lat,
         lng: calamity.lng,
-        radius_km: calamity.radius,
-        message: calamity.message,
+        radius_km: 20,
+        message: `High impact ${calamity.type} detected. Take immediate shelter.`,
         threat_type: calamity.type
       };
 
@@ -102,36 +103,15 @@ export default function Calamities() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        {calamities.map(c => (
-          <div key={c.id} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col justify-between">
-            <div>
-              <div className="flex justify-between items-start mb-4">
-                <div className={`p-3 rounded-xl bg-${c.color}-500/10`}>
-                  {c.icon}
-                </div>
-                <span className="bg-red-500/20 text-red-400 px-3 py-1 rounded-full text-xs border border-red-500/30 font-semibold tracking-wide">
-                  HIGH RISK ZONE
-                </span>
-              </div>
-              <h3 className="text-xl font-bold text-slate-200 mb-2">{c.title}</h3>
-              <p className="text-slate-400 text-sm mb-4 leading-relaxed">{c.description}</p>
-              
-              <div className="bg-slate-950 rounded-lg p-3 text-sm text-slate-500 mb-6 font-mono">
-                <p>Lat: {c.lat} | Lng: {c.lng}</p>
-                <p>Impact Radius: {c.radius} km</p>
-              </div>
-            </div>
-            
-            <button 
-              onClick={() => handleBroadcast(c)}
-              disabled={loading}
-              className={`w-full bg-red-600 hover:bg-red-500 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <ExternalLink className="w-5 h-5" />
-              Broadcast Emergency Overlay
-            </button>
+        {highRiskZones.length === 0 ? (
+          <div className="col-span-1 md:col-span-2 bg-slate-900 border border-slate-800 p-8 rounded-2xl text-center">
+             <p className="text-slate-400">No AI-predicted critical hazards at this time. Network clear.</p>
           </div>
-        ))}
+        ) : (
+          highRiskZones.map((c, index) => (
+            <CalamityCard key={c.id || index} c={c} handleBroadcast={handleBroadcast} loading={loading} />
+          ))
+        )}
       </div>
 
       {broadcastLog.length > 0 && (
